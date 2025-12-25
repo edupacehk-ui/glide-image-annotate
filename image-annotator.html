@@ -5,21 +5,19 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image Annotator</title>
     <style>
-        body { margin: 0; padding: 0; overflow: hidden; background: transparent; display: flex; flex-direction: column; }
-        #canvas { flex: 1; width: 100%; height: 100%; background: white; } /* White background for padded areas */
-        #tools { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(255, 255, 255, 0.8); padding: 5px; border-radius: 5px; }
-        button { margin: 0 5px; padding: 5px 10px; background: #ddd; border: none; cursor: pointer; }
-        button:hover { background: #ccc; }
-        button.active { background: #aaa; } /* Highlight active mode */
+        body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
+        #canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: white; } /* White background for padded areas */
+        #toolbar { position: absolute; top: 10px; left: 10px; z-index: 10; background: rgba(255, 255, 255, 0.8); padding: 5px; border-radius: 5px; }
+        #toolbar button { margin: 0 5px; padding: 5px 10px; cursor: pointer; }
     </style>
 </head>
 <body>
     <canvas id="canvas"></canvas>
-    <div id="tools">
-        <button id="pen" class="active">Pen</button>
-        <button id="eraser">Eraser</button>
+    <div id="toolbar">
         <button id="undo">Undo</button>
         <button id="clear">Clear</button>
+        <button id="eraser">Eraser</button>
+        <button id="pen">Pen</button> <!-- To switch back from eraser -->
     </div>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
@@ -27,19 +25,17 @@
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const penBtn = document.getElementById('pen');
-        const eraserBtn = document.getElementById('eraser');
-        const undoBtn = document.getElementById('undo');
-        const clearBtn = document.getElementById('clear');
-
-        let history = []; // Array to store canvas states for undo
-        let isErasing = false; // Track eraser mode
+        let drawing = false;
+        let lastX = 0;
+        let lastY = 0;
+        let mode = 'pen'; // 'pen' or 'eraser'
+        const history = []; // For undo: array of canvas states
 
         // Function to draw the image (called on load, resize, clear)
         function drawImage(saveToHistory = false) {
-            // Resize canvas to available space (accounting for tools bar)
+            // Resize canvas to full viewport
             canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight - (document.getElementById('tools').offsetHeight || 0);
+            canvas.height = window.innerHeight;
 
             // Clear canvas
             ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -50,10 +46,12 @@
             let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
 
             if (imgAspect > canvasAspect) {
+                // Image wider: fit width, center height
                 drawWidth = canvas.width;
                 drawHeight = canvas.width / imgAspect;
                 offsetY = (canvas.height - drawHeight) / 2;
             } else {
+                // Image taller: fit height, center width
                 drawHeight = canvas.height;
                 drawWidth = canvas.height * imgAspect;
                 offsetX = (canvas.width - drawWidth) / 2;
@@ -64,66 +62,43 @@
 
             if (saveToHistory) {
                 history.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
-                updateUndoBtn();
             }
         }
 
         // Load the image
         const img = new Image();
         img.crossOrigin = 'anonymous'; // Handle CORS
-        img.onload = () => {
-            drawImage(true); // Initial draw with history save
-        };
+        img.onload = () => drawImage(true); // Initial draw with history
         img.src = imageUrl;
 
-        // Drawing functionality
-        let drawing = false;
-        let lastX = 0;
-        let lastY = 0;
-
+        // Drawing function
         function draw(e) {
             if (!drawing) return;
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
             ctx.lineTo(e.offsetX, e.offsetY);
-            if (isErasing) {
-                ctx.strokeStyle = 'rgba(0,0,0,1)'; // Irrelevant for erase, but set
-                ctx.lineWidth = 10; // Thicker for eraser
+            if (mode === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out'; // Erase mode
+                ctx.strokeStyle = 'rgba(0,0,0,1)'; // Doesn't matter, as it's erasing
+                ctx.lineWidth = 10; // Larger for eraser
             } else {
+                ctx.globalCompositeOperation = 'source-over'; // Normal drawing
                 ctx.strokeStyle = '#000'; // Black pen
-                ctx.lineWidth = 2; // Normal thickness
+                ctx.lineWidth = 2; // Thickness
             }
             ctx.stroke();
             [lastX, lastY] = [e.offsetX, e.offsetY];
         }
 
-        // Toggle modes
-        function setMode(erase) {
-            isErasing = erase;
-            ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
-            penBtn.classList.toggle('active', !isErasing);
-            eraserBtn.classList.toggle('active', isErasing);
-        }
-
-        penBtn.addEventListener('click', () => setMode(false));
-        eraserBtn.addEventListener('click', () => setMode(true));
-
-        // Initial mode: Pen
-        setMode(false);
-
         canvas.addEventListener('mousedown', (e) => {
             drawing = true;
             [lastX, lastY] = [e.offsetX, e.offsetY];
+            // Save state before new stroke for undo
+            history.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
         });
 
         canvas.addEventListener('mousemove', draw);
-
-        canvas.addEventListener('mouseup', () => {
-            drawing = false;
-            history.push(ctx.getImageData(0, 0, canvas.width, canvas.height)); // Save state after stroke
-            updateUndoBtn();
-        });
-
+        canvas.addEventListener('mouseup', () => drawing = false);
         canvas.addEventListener('mouseout', () => drawing = false);
 
         // Touch support
@@ -134,6 +109,8 @@
             drawing = true;
             lastX = touch.clientX - rect.left;
             lastY = touch.clientY - rect.top;
+            // Save state before new stroke
+            history.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
         });
 
         canvas.addEventListener('touchmove', (e) => {
@@ -146,10 +123,12 @@
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
             ctx.lineTo(x, y);
-            if (isErasing) {
+            if (mode === 'eraser') {
+                ctx.globalCompositeOperation = 'destination-out';
                 ctx.strokeStyle = 'rgba(0,0,0,1)';
                 ctx.lineWidth = 10;
             } else {
+                ctx.globalCompositeOperation = 'source-over';
                 ctx.strokeStyle = '#000';
                 ctx.lineWidth = 2;
             }
@@ -157,41 +136,35 @@
             [lastX, lastY] = [x, y];
         });
 
-        canvas.addEventListener('touchend', () => {
-            drawing = false;
-            history.push(ctx.getImageData(0, 0, canvas.width, canvas.height)); // Save state after stroke
-            updateUndoBtn();
-        });
+        canvas.addEventListener('touchend', () => drawing = false);
 
-        // Undo functionality
-        function undo() {
+        // Toolbar buttons
+        document.getElementById('undo').addEventListener('click', () => {
             if (history.length > 1) { // Keep at least the initial state
                 history.pop(); // Remove current state
-                ctx.putImageData(history[history.length - 1], 0, 0);
-                updateUndoBtn();
+                const previous = history[history.length - 1];
+                ctx.putImageData(previous, 0, 0);
             }
-        }
+        });
 
-        // Clear functionality
-        function clearCanvas() {
-            history = []; // Reset history
-            drawImage(true); // Redraw original image and save initial state
-        }
+        document.getElementById('clear').addEventListener('click', () => {
+            history.length = 0; // Reset history
+            drawImage(true); // Redraw image and push to history
+        });
 
-        // Update undo button state
-        function updateUndoBtn() {
-            undoBtn.disabled = history.length <= 1;
-        }
+        document.getElementById('eraser').addEventListener('click', () => {
+            mode = 'eraser';
+        });
 
-        undoBtn.addEventListener('click', undo);
-        clearBtn.addEventListener('click', clearCanvas);
+        document.getElementById('pen').addEventListener('click', () => {
+            mode = 'pen';
+        });
 
         // Handle window resize
         window.addEventListener('resize', () => {
-            const currentState = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            drawImage();
-            ctx.putImageData(currentState, 0, 0); // Restore drawings after resize
-            history.push(currentState); // Update history
+            const currentState = ctx.getImageData(0, 0, canvas.width, canvas.height); // Save current annotations
+            drawImage(); // Redraw image on new size
+            ctx.putImageData(currentState, 0, 0); // Reapply annotations (may look stretched, but simple)
         });
     </script>
 </body>
