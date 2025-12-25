@@ -10,11 +10,14 @@
         #tools { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); z-index: 10; background: rgba(255, 255, 255, 0.8); padding: 5px; border-radius: 5px; }
         button { margin: 0 5px; padding: 5px 10px; background: #ddd; border: none; cursor: pointer; }
         button:hover { background: #ccc; }
+        button.active { background: #aaa; } /* Highlight active mode */
     </style>
 </head>
 <body>
     <canvas id="canvas"></canvas>
     <div id="tools">
+        <button id="pen" class="active">Pen</button>
+        <button id="eraser">Eraser</button>
         <button id="undo">Undo</button>
         <button id="clear">Clear</button>
     </div>
@@ -24,10 +27,13 @@
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const penBtn = document.getElementById('pen');
+        const eraserBtn = document.getElementById('eraser');
         const undoBtn = document.getElementById('undo');
         const clearBtn = document.getElementById('clear');
 
         let history = []; // Array to store canvas states for undo
+        let isErasing = false; // Track eraser mode
 
         // Function to draw the image (called on load, resize, clear)
         function drawImage(saveToHistory = false) {
@@ -80,11 +86,30 @@
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
             ctx.lineTo(e.offsetX, e.offsetY);
-            ctx.strokeStyle = '#000'; // Black pen
-            ctx.lineWidth = 2; // Thickness
+            if (isErasing) {
+                ctx.strokeStyle = 'rgba(0,0,0,1)'; // Irrelevant for erase, but set
+                ctx.lineWidth = 10; // Thicker for eraser
+            } else {
+                ctx.strokeStyle = '#000'; // Black pen
+                ctx.lineWidth = 2; // Normal thickness
+            }
             ctx.stroke();
             [lastX, lastY] = [e.offsetX, e.offsetY];
         }
+
+        // Toggle modes
+        function setMode(erase) {
+            isErasing = erase;
+            ctx.globalCompositeOperation = isErasing ? 'destination-out' : 'source-over';
+            penBtn.classList.toggle('active', !isErasing);
+            eraserBtn.classList.toggle('active', isErasing);
+        }
+
+        penBtn.addEventListener('click', () => setMode(false));
+        eraserBtn.addEventListener('click', () => setMode(true));
+
+        // Initial mode: Pen
+        setMode(false);
 
         canvas.addEventListener('mousedown', (e) => {
             drawing = true;
@@ -121,8 +146,13 @@
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
             ctx.lineTo(x, y);
-            ctx.strokeStyle = '#000';
-            ctx.lineWidth = 2;
+            if (isErasing) {
+                ctx.strokeStyle = 'rgba(0,0,0,1)';
+                ctx.lineWidth = 10;
+            } else {
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+            }
             ctx.stroke();
             [lastX, lastY] = [x, y];
         });
