@@ -5,69 +5,111 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Image Annotator</title>
     <style>
-        body { margin: 0; display: flex; justify-content: center; align-items: center; height: 100vh; background: #f0f0f0; }
-        #canvas { border: 1px solid #000; background: white; }
+        body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
+        #canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
     </style>
 </head>
 <body>
     <canvas id="canvas"></canvas>
     <script>
         const urlParams = new URLSearchParams(window.location.search);
-        const imageUrl = urlParams.get('image') || 'https://via.placeholder.com/800x600'; // Fallback image if none provided
+        const imageUrl = urlParams.get('image') || 'https://via.placeholder.com/800x600'; // Fallback image
 
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
         // Load the image
         const img = new Image();
-        img.crossOrigin = 'anonymous'; // Handle CORS if needed
+        img.crossOrigin = 'anonymous'; // Handle CORS
         img.onload = () => {
-            canvas.width = img.width;
-            canvas.height = img.height;
-            ctx.drawImage(img, 0, 0);
+            // Resize canvas to full viewport
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+
+            // Calculate scaling to fit image while preserving aspect ratio
+            const imgAspect = img.width / img.height;
+            const canvasAspect = canvas.width / canvas.height;
+            let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
+
+            if (imgAspect > canvasAspect) {
+                // Image wider: fit width, center height
+                drawWidth = canvas.width;
+                drawHeight = canvas.width / imgAspect;
+                offsetY = (canvas.height - drawHeight) / 2;
+            } else {
+                // Image taller: fit height, center width
+                drawHeight = canvas.height;
+                drawWidth = canvas.height * imgAspect;
+                offsetX = (canvas.width - drawWidth) / 2;
+            }
+
+            // Draw scaled image, centered
+            ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+
+            // Store offsets and scale for drawing adjustments
+            window.scaleX = drawWidth / img.width;
+            window.scaleY = drawHeight / img.height;
+            window.offsetX = offsetX;
+            window.offsetY = offsetY;
         };
         img.src = imageUrl;
 
-        // Drawing functionality
+        // Drawing functionality (adjusted for offsets and scale)
         let drawing = false;
         let lastX = 0;
         let lastY = 0;
 
         function draw(e) {
             if (!drawing) return;
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX - rect.left - window.offsetX) / window.scaleX;
+            const y = (e.clientY - rect.top - window.offsetY) / window.scaleY;
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
-            ctx.lineTo(e.offsetX, e.offsetY);
+            ctx.lineTo(x, y);
             ctx.strokeStyle = '#000'; // Black pen
-            ctx.lineWidth = 2; // Thickness
+            ctx.lineWidth = 2; // Thickness (adjust as needed; scales with image)
             ctx.stroke();
-            [lastX, lastY] = [e.offsetX, e.offsetY];
+            [lastX, lastY] = [x, y];
         }
 
         canvas.addEventListener('mousedown', (e) => {
             drawing = true;
-            [lastX, lastY] = [e.offsetX, e.offsetY];
+            const rect = canvas.getBoundingClientRect();
+            lastX = (e.clientX - rect.left - window.offsetX) / window.scaleX;
+            lastY = (e.clientY - rect.top - window.offsetY) / window.scaleY;
         });
 
         canvas.addEventListener('mousemove', draw);
         canvas.addEventListener('mouseup', () => drawing = false);
         canvas.addEventListener('mouseout', () => drawing = false);
 
-        // Touch support for mobile
+        // Touch support
         canvas.addEventListener('touchstart', (e) => {
             const touch = e.touches[0];
+            const rect = canvas.getBoundingClientRect();
             drawing = true;
-            [lastX, lastY] = [touch.clientX - canvas.offsetLeft, touch.clientY - canvas.offsetTop];
+            lastX = (touch.clientX - rect.left - window.offsetX) / window.scaleX;
+            lastY = (touch.clientY - rect.top - window.offsetY) / window.scaleY;
         });
 
         canvas.addEventListener('touchmove', (e) => {
             if (!drawing) return;
             const touch = e.touches[0];
-            draw({ offsetX: touch.clientX - canvas.offsetLeft, offsetY: touch.clientY - canvas.offsetTop });
+            const rect = canvas.getBoundingClientRect();
+            draw({
+                clientX: touch.clientX,
+                clientY: touch.clientY
+            });
             e.preventDefault();
         });
 
         canvas.addEventListener('touchend', () => drawing = false);
+
+        // Handle window resize (e.g., orientation change on mobile)
+        window.addEventListener('resize', () => {
+            img.onload(); // Re-draw on resize
+        });
     </script>
 </body>
 </html>
