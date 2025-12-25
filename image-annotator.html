@@ -6,7 +6,7 @@
     <title>Image Annotator</title>
     <style>
         body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
-        #canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; }
+        #canvas { position: absolute; top: 0; left: 0; width: 100vw; height: 100vh; background: white; } /* White background for padded areas */
     </style>
 </head>
 <body>
@@ -18,13 +18,14 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Load the image
-        const img = new Image();
-        img.crossOrigin = 'anonymous'; // Handle CORS
-        img.onload = () => {
+        // Function to draw the image (called on load and resize)
+        function drawImage() {
             // Resize canvas to full viewport
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
+
+            // Clear canvas (with white background via style)
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
 
             // Calculate scaling to fit image while preserving aspect ratio
             const imgAspect = img.width / img.height;
@@ -45,71 +46,69 @@
 
             // Draw scaled image, centered
             ctx.drawImage(img, offsetX, offsetY, drawWidth, drawHeight);
+        }
 
-            // Store offsets and scale for drawing adjustments
-            window.scaleX = drawWidth / img.width;
-            window.scaleY = drawHeight / img.height;
-            window.offsetX = offsetX;
-            window.offsetY = offsetY;
-        };
+        // Load the image
+        const img = new Image();
+        img.crossOrigin = 'anonymous'; // Handle CORS
+        img.onload = drawImage;
         img.src = imageUrl;
 
-        // Drawing functionality (adjusted for offsets and scale)
+        // Drawing functionality (using raw canvas coordinates)
         let drawing = false;
         let lastX = 0;
         let lastY = 0;
 
         function draw(e) {
             if (!drawing) return;
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX - rect.left - window.offsetX) / window.scaleX;
-            const y = (e.clientY - rect.top - window.offsetY) / window.scaleY;
             ctx.beginPath();
             ctx.moveTo(lastX, lastY);
-            ctx.lineTo(x, y);
+            ctx.lineTo(e.offsetX, e.offsetY);
             ctx.strokeStyle = '#000'; // Black pen
-            ctx.lineWidth = 2; // Thickness (adjust as needed; scales with image)
+            ctx.lineWidth = 2; // Thickness
             ctx.stroke();
-            [lastX, lastY] = [x, y];
+            [lastX, lastY] = [e.offsetX, e.offsetY];
         }
 
         canvas.addEventListener('mousedown', (e) => {
             drawing = true;
-            const rect = canvas.getBoundingClientRect();
-            lastX = (e.clientX - rect.left - window.offsetX) / window.scaleX;
-            lastY = (e.clientY - rect.top - window.offsetY) / window.scaleY;
+            [lastX, lastY] = [e.offsetX, e.offsetY];
         });
 
         canvas.addEventListener('mousemove', draw);
         canvas.addEventListener('mouseup', () => drawing = false);
         canvas.addEventListener('mouseout', () => drawing = false);
 
-        // Touch support
+        // Touch support (calculate offsets manually)
         canvas.addEventListener('touchstart', (e) => {
+            e.preventDefault(); // Prevent scrolling
             const touch = e.touches[0];
             const rect = canvas.getBoundingClientRect();
             drawing = true;
-            lastX = (touch.clientX - rect.left - window.offsetX) / window.scaleX;
-            lastY = (touch.clientY - rect.top - window.offsetY) / window.scaleY;
+            lastX = touch.clientX - rect.left;
+            lastY = touch.clientY - rect.top;
         });
 
         canvas.addEventListener('touchmove', (e) => {
             if (!drawing) return;
+            e.preventDefault(); // Prevent scrolling
             const touch = e.touches[0];
             const rect = canvas.getBoundingClientRect();
-            draw({
-                clientX: touch.clientX,
-                clientY: touch.clientY
-            });
-            e.preventDefault();
+            const x = touch.clientX - rect.left;
+            const y = touch.clientY - rect.top;
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.stroke();
+            [lastX, lastY] = [x, y];
         });
 
         canvas.addEventListener('touchend', () => drawing = false);
 
-        // Handle window resize (e.g., orientation change on mobile)
-        window.addEventListener('resize', () => {
-            img.onload(); // Re-draw on resize
-        });
+        // Handle window resize (e.g., orientation change)
+        window.addEventListener('resize', drawImage);
     </script>
 </body>
 </html>
