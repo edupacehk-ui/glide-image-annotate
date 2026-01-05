@@ -1,187 +1,212 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Lined Paper Annotator</title>
-  <style>
-    body {
-      margin: 0;
-      padding: 0;
-      background: #f0f0f0;
-      font-family: Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      height: 100vh;
-    }
-    #toolbar {
-      background: #333;
-      padding: 10px;
-      text-align: center;
-      box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    }
-    #toolbar button {
-      margin: 0 5px;
-      padding: 8px 12px;
-      font-size: 14px;
-      cursor: pointer;
-    }
-    #canvasContainer {
-      flex: 1;
-      overflow: hidden;
-      position: relative;
-    }
-    #canvas {
-      background: white;
-      background-image: 
-        linear-gradient(#ccc 1px, transparent 1px),
-        linear-gradient(90deg, #ccc 1px, transparent 1px);
-      background-size: 100% 30px, 30px 100%;
-      background-position: 0 30px, 30px 0;
-    }
-    #instructions {
-      background: #e3f2fd;
-      padding: 10px;
-      text-align: center;
-      font-size: 14px;
-      color: #333;
-    }
-    #saveBtn {
-      background: #4caf50;
-      color: white;
-      font-weight: bold;
-      padding: 12px 20px;
-      border: none;
-      border-radius: 4px;
-      font-size: 16px;
-      cursor: pointer;
-      margin: 15px auto;
-      display: block;
-    }
-    #saveBtn:hover {
-      background: #45a049;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lined Paper Annotator</title>
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background: transparent; }
+        #container { position: relative; width: 100%; height: calc(100vh - 60px); }
+        #background, #drawing { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        #drawing { background: transparent; }
+        #tools {
+            position: fixed;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 10;
+            background: rgba(255, 255, 255, 0.9);
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            margin: 0 6px;
+            padding: 8px 16px;
+            background: #eee;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover { background: #ddd; }
+        button:active { background: #ccc; }
+    </style>
 </head>
 <body>
-  <div id="toolbar">
-    <button id="clearBtn">Clear</button>
-    <button id="undoBtn">Undo</button>
-  </div>
+    <div id="container">
+        <canvas id="background"></canvas>
+        <canvas id="drawing"></canvas>
+    </div>
+    <div id="tools">
+        <button id="pen">Pen</button>
+        <button id="eraser">Eraser</button>
+        <button id="undo">Undo</button>
+        <button id="clear">Clear All</button>
+    </div>
 
-  <div id="instructions">
-    Write your solution below. When finished, click <strong>Save Drawing</strong> → download the image → upload it back in MyStudyfy to get AI feedback.
-  </div>
+    <script>
+        const container = document.getElementById('container');
+        const background = document.getElementById('background');
+        const bgCtx = background.getContext('2d');
+        const drawing = document.getElementById('drawing');
+        const drawCtx = drawing.getContext('2d');
 
-  <div id="canvasContainer">
-    <canvas id="canvas"></canvas>
-  </div>
+        const penBtn = document.getElementById('pen');
+        const eraserBtn = document.getElementById('eraser');
+        const undoBtn = document.getElementById('undo');
+        const clearBtn = document.getElementById('clear');
 
-  <button id="saveBtn">Save Drawing</button>
+        let history = [];
+        let currentTool = 'pen';
 
-  <script>
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const clearBtn = document.getElementById('clearBtn');
-    const undoBtn = document.getElementById('undoBtn');
-    const saveBtn = document.getElementById('saveBtn');
+        // === Customizable settings ===
+        const LINE_SPACING = 40;        // Increased spacing between lines (adjust as needed)
+        const LINE_COLOR = '#000000';  // Black horizontal lines
+        // Red margin line has been removed
 
-    // Resize canvas to fill container
-    function resizeCanvas() {
-      canvas.width = canvas.parentElement.clientWidth;
-      canvas.height = canvas.parentElement.clientHeight;
-    }
-    window.addEventListener('resize', resizeCanvas);
-    resizeCanvas();
-
-    let drawing = false;
-    let paths = [];
-    let currentPath = [];
-
-    // Drawing functions
-    function startDrawing(e) {
-      drawing = true;
-      const pos = getPosition(e);
-      currentPath = [{x: pos.x, y: pos.y}];
-      paths.push(currentPath);
-    }
-
-    function draw(e) {
-      if (!drawing) return;
-      const pos = getPosition(e);
-      currentPath.push({x: pos.x, y: pos.y});
-      redraw();
-    }
-
-    function stopDrawing() {
-      if (drawing) {
-        drawing = false;
-        redraw();
-      }
-    }
-
-    function getPosition(e) {
-      const rect = canvas.getBoundingClientRect();
-      if (e.touches) {
-        return {
-          x: e.touches[0].clientX - rect.left,
-          y: e.touches[0].clientY - rect.top
-        };
-      }
-      return {
-        x: e.clientX - rect.left,
-        y: e.clientY - rect.top
-      };
-    }
-
-    function redraw() {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.lineWidth = 2;
-      ctx.lineCap = 'round';
-      ctx.strokeStyle = '#000';
-
-      paths.forEach(path => {
-        if (path.length < 2) return;
-        ctx.beginPath();
-        ctx.moveTo(path[0].x, path[0].y);
-        for (let i = 1; i < path.length; i++) {
-          ctx.lineTo(path[i].x, path[i].y);
+        function setTool(tool) {
+            currentTool = tool;
+            if (tool === 'pen') {
+                drawCtx.globalCompositeOperation = 'source-over';
+                drawCtx.strokeStyle = '#000000';
+                drawCtx.lineWidth = 2;
+            } else if (tool === 'eraser') {
+                drawCtx.globalCompositeOperation = 'destination-out';
+                drawCtx.lineWidth = 12;
+            }
         }
-        ctx.stroke();
-      });
-    }
+        setTool('pen');
 
-    // Event listeners
-    canvas.addEventListener('mousedown', startDrawing);
-    canvas.addEventListener('mousemove', draw);
-    canvas.addEventListener('mouseup', stopDrawing);
-    canvas.addEventListener('mouseout', stopDrawing);
+        penBtn.onclick = () => setTool('pen');
+        eraserBtn.onclick = () => setTool('eraser');
 
-    canvas.addEventListener('touchstart', startDrawing);
-    canvas.addEventListener('touchmove', draw);
-    canvas.addEventListener('touchend', stopDrawing);
+        function drawLinedBackground(saveHistory = false) {
+            const rect = container.getBoundingClientRect();
+            const width = rect.width;
+            const height = rect.height;
 
-    clearBtn.addEventListener('click', () => {
-      paths = [];
-      currentPath = [];
-      redraw();
-    });
+            // Resize canvases
+            background.width = width;
+            background.height = height;
+            drawing.width = width;
+            drawing.height = height;
 
-    undoBtn.addEventListener('click', () => {
-      paths.pop();
-      redraw();
-    });
+            // White background
+            bgCtx.fillStyle = '#ffffff';
+            bgCtx.fillRect(0, 0, width, height);
 
-    // Save drawing as PNG
-    saveBtn.addEventListener('click', () => {
-      const dataURL = canvas.toDataURL('image/png');
-      const link = document.createElement('a');
-      link.href = dataURL;
-      link.download = 'my_solution.png';
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    });
+            // Draw horizontal lines only
+            bgCtx.strokeStyle = LINE_COLOR;
+            bgCtx.lineWidth = 1;
+
+            for (let y = LINE_SPACING; y < height; y += LINE_SPACING) {
+                bgCtx.beginPath();
+                bgCtx.moveTo(0, y);
+                bgCtx.lineTo(width, y);
+                bgCtx.stroke();
+            }
+
+            if (saveHistory) {
+                drawCtx.clearRect(0, 0, width, height);
+                history = [drawCtx.getImageData(0, 0, width, height)];
+                updateUndoBtn();
+            }
+        }
+
+        // Initial draw
+        drawLinedBackground(true);
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const currentState = drawCtx.getImageData(0, 0, drawing.width, drawing.height);
+            drawLinedBackground();
+            if (currentState.width === drawing.width && currentState.height === drawing.height) {
+                drawCtx.putImageData(currentState, 0, 0);
+                history.push(currentState);
+                updateUndoBtn();
+            } else {
+                history = [drawCtx.getImageData(0, 0, drawing.width, drawing.height)];
+                updateUndoBtn();
+            }
+        });
+
+        let drawingActive = false;
+        let lastX = 0, lastY = 0;
+
+        function getPos(e) {
+            const rect = drawing.getBoundingClientRect();
+            if (e.touches) {
+                return {
+                    x: e.touches[0].clientX - rect.left,
+                    y: e.touches[0].clientY - rect.top
+                };
+            }
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top
+            };
+        }
+
+        function startDrawing(e) {
+            drawingActive = true;
+            const pos = getPos(e);
+            lastX = pos.x;
+            lastY = pos.y;
+        }
+
+        function moveDrawing(e) {
+            if (!drawingActive) return;
+            const pos = getPos(e);
+            drawCtx.beginPath();
+            drawCtx.moveTo(lastX, lastY);
+            drawCtx.lineTo(pos.x, pos.y);
+            drawCtx.stroke();
+            [lastX, lastY] = [pos.x, pos.y];
+        }
+
+        function endDrawing() {
+            if (drawingActive) {
+                drawingActive = false;
+                history.push(drawCtx.getImageData(0, 0, drawing.width, drawing.height));
+                updateUndoBtn();
+            }
+        }
+
+        // Mouse events
+        drawing.addEventListener('mousedown', startDrawing);
+        drawing.addEventListener('mousemove', moveDrawing);
+        drawing.addEventListener('mouseup', endDrawing);
+        drawing.addEventListener('mouseout', endDrawing);
+
+        // Touch events
+        drawing.addEventListener('touchstart', e => { e.preventDefault(); startDrawing(e); });
+        drawing.addEventListener('touchmove', e => { e.preventDefault(); moveDrawing(e); });
+        drawing.addEventListener('touchend', e => { e.preventDefault(); endDrawing(); });
+
+        function undo() {
+            if (history.length > 1) {
+                history.pop();
+                drawCtx.putImageData(history[history.length - 1], 0, 0);
+                updateUndoBtn();
+            }
+        }
+
+        function clearCanvas() {
+            drawCtx.clearRect(0, 0, drawing.width, drawing.height);
+            history = [drawCtx.getImageData(0, 0, drawing.width, drawing.height)];
+            updateUndoBtn();
+        }
+
+        function updateUndoBtn() {
+            undoBtn.disabled = history.length <= 1;
+        }
+
+        undoBtn.onclick = undo;
+        clearBtn.onclick = clearCanvas;
+    </script>
+</body>
+</html>
   </script>
 </body>
 </html>
