@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>MyStudyfy Solution</title>
+  
+  <!-- React & Excalidraw from CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script defer src="https://unpkg.com/@excalidraw/excalidraw@latest/dist/excalidraw.production.min.js"></script>
+  
+  <style>
+    body, html { margin: 0; height: 100%; overflow: hidden; background: #f5f5f5; }
+    #root { height: calc(100% - 80px); } /* Space for button + status */
+    #controls { padding: 10px; text-align: center; background: white; border-top: 1px solid #ddd; }
+    
+    /* Lined paper background (ruled lines, adjustable) */
+    .excalidraw .excalidraw__canvas {
+      background: repeating-linear-gradient(
+        transparent,
+        transparent 35px,
+        #e0e0e0 36px
+      ) !important;
+    }
+    
+    /* Optional: Add left margin line (red/blue like real paper) */
+    .excalidraw .excalidraw__canvas {
+      background-image: 
+        linear-gradient(90deg, #ff000050 1px, transparent 1px),
+        repeating-linear-gradient(transparent, transparent 35px, #e0e0e0 36px);
+      background-position: 60px 0;
+    }
+    
+    /* Hide grid (we use lines instead) */
+    .excalidraw button[data-testid="grid-mode"] { display: none; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <div id="controls">
+    <button id="submitBtn" style="padding: 12px 24px; font-size: 18px; background: #0066ff; color: white; border: none; border-radius: 8px;">
+      Submit Solution
+    </button>
+    <div id="status" style="margin-top: 10px; font-weight: bold;"></div>
+  </div>
+
+  <script>
+    const { Excalidraw, exportToBlob } = window.ExcalidrawDefaultExport; // Use latest export utils
+    
+    const excalidrawRef = React.createRef();
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const submissionId = urlParams.get('submissionId');
+    
+    if (!submissionId) {
+      document.getElementById('status').textContent = 'Error: Missing submission ID';
+      document.getElementById('status').style.color = 'red';
+    }
+    
+    ReactDOM.createRoot(document.getElementById('root')).render(
+      React.createElement(Excalidraw, {
+        ref: excalidrawRef,
+        initialData: { appState: { gridModeEnabled: false, zenModeEnabled: true } }, // Clean start, no distractions
+        UIOptions: { canvasActions: { export: false } } // Hide default export to avoid confusion
+      })
+    );
+    
+    document.getElementById('submitBtn').addEventListener('click', async () => {
+      const statusEl = document.getElementById('status');
+      statusEl.textContent = 'Exporting & uploading...';
+      
+      if (!submissionId) return;
+      
+      const elements = excalidrawRef.current.getSceneElements();
+      const appState = excalidrawRef.current.getAppState();
+      
+      // Export visible area as PNG
+      const blob = await exportToBlob({
+        elements,
+        appState,
+        mimeType: "image/png",
+        quality: 1.0
+      });
+      
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64 = reader.result.split(',')[1];
+        
+        try {
+          const response = await fetch('https://script.google.com/macros/s/YOUR_GAS_EXEC_URL/exec', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ submissionId, base64 })
+          });
+          
+          const result = await response.json();
+          if (result.success) {
+            statusEl.textContent = 'Submitted successfully! You can close this.';
+            statusEl.style.color = 'green';
+            document.getElementById('submitBtn').disabled = true;
+            // Optional: Show preview
+            const img = document.createElement('img');
+            img.src = result.imageUrl;
+            img.style.maxWidth = '100%';
+            document.getElementById('controls').appendChild(img);
+          } else {
+            statusEl.textContent = 'Error: ' + result.error;
+            statusEl.style.color = 'red';
+          }
+        } catch (err) {
+          statusEl.textContent = 'Network error';
+          statusEl.style.color = 'red';
+        }
+      };
+      reader.readAsDataURL(blob);
+    });
+  </script>
+</body>
+</html>
